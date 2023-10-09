@@ -11,7 +11,7 @@
 #define stream_hpp
 
 #include "dispatchqueue.hpp"
-#include "rtc.hpp"
+#include "rtc/rtc.hpp"
 
 class StreamSource {
 protected:

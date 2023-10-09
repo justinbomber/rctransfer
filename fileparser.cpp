@@ -31,14 +31,27 @@ void FileParser::start() {
 void FileParser::stop() {
     sample = {};
     sampleTime_us = 0;
+    // counter = 59;
     counter = -1;
 }
 
 void FileParser::loadNextSample() {
     string frame_id = to_string(++counter);
 
+    if (counter > 29) 
+        directory = "samples/candle";
+    else
+        directory = "samples/tensec";
+
+    if (counter == 30)
+    {
+        loopTimestampOffset = sampleTime_us;
+        loadNextSample();
+        return;
+    }
+    
     string url = directory + "/sample-" + frame_id + extension;
-    // std::cout << url << std::endl;
+    cout << "offset = " << loopTimestampOffset << ", us = " << sampleTime_us << endl;
     ifstream source(url, ios_base::binary);
     if (!source) {
         if (loop && counter > 0) {
@@ -68,4 +81,3 @@ uint64_t FileParser::getSampleTime_us() {
 uint64_t FileParser::getSampleDuration_us() {
 	return sampleDuration_us;
 }
-

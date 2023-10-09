@@ -31,6 +31,7 @@ template <class T> weak_ptr<T> make_weak_ptr(shared_ptr<T> ptr) { return ptr; }
 /// all connected clients
 unordered_map<string, shared_ptr<Client>> clients{};
 
+std::uint32_t lasttimestamp = 0;
 /// Creates peer connection and client representation
 /// @param config Configuration
 /// @param wws Websocket for signaling
@@ -60,17 +61,18 @@ DispatchQueue MainThread("Main");
 
 /// Audio and video stream
 optional<shared_ptr<Stream>> avStream = nullopt;
+optional<shared_ptr<Stream>> avStream2 = nullopt;
 
 const string defaultRootDirectory = "samples/";
-const string defaultH264SamplesDirectory = defaultRootDirectory + "h264bak/";
+const string defaultH264SamplesDirectory = defaultRootDirectory + "tensec/";
 string h264SamplesDirectory = defaultH264SamplesDirectory;
-const string defaultOpusSamplesDirectory = defaultRootDirectory + "opus/";
+const string defaultOpusSamplesDirectory = defaultRootDirectory + "opuss/";
 string opusSamplesDirectory = defaultOpusSamplesDirectory;
 const string defaultIPAddress = "10.1.1.128";
 const uint16_t defaultPort = 8000;
 string ip_address = defaultIPAddress;
 uint16_t port = defaultPort;
-string local_Id = "server";
+string local_Id = "test";
 
 /// Incomming message handler for websocket
 /// @param message Incommint message
@@ -204,7 +206,12 @@ int main(int argc, char **argv) try {
     return -1;
 }
 
-shared_ptr<ClientTrackData> addVideo(const shared_ptr<PeerConnection> pc, const uint8_t payloadType, const uint32_t ssrc, const string cname, const string msid, const function<void (void)> onOpen) {
+shared_ptr<ClientTrackData> addVideo(const shared_ptr<PeerConnection> pc, 
+                                     const uint8_t payloadType, 
+                                     const uint32_t ssrc, 
+                                     const string cname, 
+                                     const string msid, 
+                                     const function<void (void)> onOpen) {
     auto video = Description::Video(cname);
     video.addH264Codec(payloadType);
     video.addSSRC(ssrc, cname, msid, cname);
@@ -261,6 +268,10 @@ shared_ptr<Client> createPeerConnection(const Configuration &config,
 
     pc->onStateChange([id](PeerConnection::State state) {
         cout << "State: " << state << endl;
+        if (state == PeerConnection::State::Closed)
+        {
+            cout << "closed the status --------------------" << endl;
+        }
         if (state == PeerConnection::State::Disconnected ||
             state == PeerConnection::State::Failed ||
             state == PeerConnection::State::Closed) {
@@ -330,6 +341,7 @@ shared_ptr<Client> createPeerConnection(const Configuration &config,
 /// Create stream
 shared_ptr<Stream> createStream(const string h264Samples, const unsigned fps, const string opusSamples) {
     // video source
+    cout << "create a stream---<<<<";
     auto video = make_shared<H264FileParser>(h264Samples, fps, true);
     // audio source
     auto audio = make_shared<OPUSFileParser>(opusSamples, true);
@@ -353,7 +365,13 @@ shared_ptr<Stream> createStream(const string h264Samples, const unsigned fps, co
                 tracks.push_back(ClientTrack(id, trackData));
             }
         }
+        // if (tracks.empty()) {
+        //     auto client = clientTrack.id;
+        //     auto trackData = clientTrack.trackData;
+        //     auto rtpConfig = trackData->sender->rtpConfig;
+        // }
         if (!tracks.empty()) {
+            // cout << tracks.size() << " <<<------tracks" << endl;
             for (auto clientTrack: tracks) {
                 auto client = clientTrack.id;
                 auto trackData = clientTrack.trackData;
@@ -361,10 +379,13 @@ shared_ptr<Stream> createStream(const string h264Samples, const unsigned fps, co
 
                 // sample time is in us, we need to convert it to seconds
                 auto elapsedSeconds = double(sampleTime) / (1000 * 1000);
+                // elapsedSeconds += 2;
+                // cout << "starttime seconds: " << rtpConfig->startTimestamp << endl;
                 // get elapsed time in clock rate
                 uint32_t elapsedTimestamp = rtpConfig->secondsToTimestamp(elapsedSeconds);
                 // set new timestamp
                 rtpConfig->timestamp = rtpConfig->startTimestamp + elapsedTimestamp;
+
 
                 // get elapsed time in clock rate from last RTCP sender report
                 auto reportElapsedTimestamp = rtpConfig->timestamp - trackData->sender->lastReportedTimestamp();
@@ -372,7 +393,7 @@ shared_ptr<Stream> createStream(const string h264Samples, const unsigned fps, co
                 if (rtpConfig->timestampToSeconds(reportElapsedTimestamp) > 1) {
                     trackData->sender->setNeedsToReport();
                 }
-
+                lasttimestamp = trackData->sender->lastReportedTimestamp();
                 // cout << "Sending " << streamType << " sample with size: " << to_string(sample.size()) << " to " << client << endl;
                 try {
                     // send sample
@@ -397,22 +418,31 @@ shared_ptr<Stream> createStream(const string h264Samples, const unsigned fps, co
 /// Start stream
 void startStream() {
     shared_ptr<Stream> stream;
-    if (avStream.has_value()) {
-        stream = avStream.value();
-        if (stream->isRunning) {
-            // stream is already running
-            return;
-        }
-    } else {
+    // if (avStream.has_value()) {
+    //     stream = avStream.value();
+    //     if (stream->isRunning) {
+    //         // stream is already running
+    //         return;
+    //     }
+    // } else {
         stream = createStream(h264SamplesDirectory, 30, opusSamplesDirectory);
         avStream = stream;
-    }
+    // }
     stream->start();
+    // std::this_thread::sleep_for(std::chrono::seconds(5));  // 休眠5秒
+    // stream->stop();
+    
+    // h264SamplesDirectory = "samples/news";
+    // stream = createStream(h264SamplesDirectory, 30, opusSamplesDirectory);
+    // avStream = stream;
+    // }
+    // stream->start();
 }
 
 /// Send previous key frame so browser can show something to user
 /// @param stream Stream
 /// @param video Video track data
+
 void sendInitialNalus(shared_ptr<Stream> stream, shared_ptr<ClientTrackData> video) {
     auto h264 = dynamic_cast<H264FileParser *>(stream->video.get());
     auto initialNalus = h264->initialNALUS();
@@ -424,10 +454,10 @@ void sendInitialNalus(shared_ptr<Stream> stream, shared_ptr<ClientTrackData> vid
         const uint32_t frameTimestampDuration = video->sender->rtpConfig->secondsToTimestamp(frameDuration_s);
         cout << "frameTimestampDuration: " << frameTimestampDuration << endl;
         video->sender->rtpConfig->timestamp = video->sender->rtpConfig->startTimestamp - frameTimestampDuration * 2;
-        cout << "1. video->sender->rtpConfig->timestamp: " << video->sender->rtpConfig->timestamp << endl;
+        cout << "1. video->sender->rtpConfig->timestamp: " << video->sender->rtpConfig->startTimestamp << endl;
         video->track->send(initialNalus);
         video->sender->rtpConfig->timestamp += frameTimestampDuration;
-        cout << "2. video->sender->rtpConfig->timestamp: " << video->sender->rtpConfig->timestamp << endl;
+        cout << "2. video->sender->rtpConfig->timestamp: " << video->sender->rtpConfig->startTimestamp << endl;
         // Send initial NAL units again to start stream in firefox browser
         video->track->send(initialNalus);
     }

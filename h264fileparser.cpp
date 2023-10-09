@@ -8,7 +8,7 @@
  */
 
 #include "h264fileparser.hpp"
-#include "rtc.hpp"
+#include "rtc/rtc.hpp"
 
 #include <fstream>
 
@@ -37,12 +37,15 @@ void H264FileParser::loadNextSample() {
         auto type = header->unitType();
         switch (type) {
             case 7:
+                cout << "type 7 ---<" << endl;
                 previousUnitType7 = {sample.begin() + i, sample.begin() + naluEndIndex};
                 break;
             case 8:
+                cout << "type 8 ---<" << endl;
                 previousUnitType8 = {sample.begin() + i, sample.begin() + naluEndIndex};;
                 break;
             case 5:
+                cout << "type 5 ---<" << endl;
                 previousUnitType5 = {sample.begin() + i, sample.begin() + naluEndIndex};;
                 break;
         }
@@ -54,14 +57,17 @@ vector<byte> H264FileParser::initialNALUS() {
     vector<byte> units{};
     if (previousUnitType7.has_value()) {
         auto nalu = previousUnitType7.value();
+        cout << "nalu size is --- >>>" << nalu.size() << endl;
         units.insert(units.end(), nalu.begin(), nalu.end());
     }
     if (previousUnitType8.has_value()) {
         auto nalu = previousUnitType8.value();
+        cout << "nalu size is --- >>>" << nalu.size() << endl;
         units.insert(units.end(), nalu.begin(), nalu.end());
     }
     if (previousUnitType5.has_value()) {
         auto nalu = previousUnitType5.value();
+        cout << "nalu size is --- >>>" << nalu.size() << endl;
         units.insert(units.end(), nalu.begin(), nalu.end());
     }
     return units;
